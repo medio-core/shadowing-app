@@ -1,0 +1,31 @@
+# Release artifacts
+app/release/
+*.aab
+*.apk
+
+# Gradle / Android build
+.gradle/
+build/
+app/build/
+**/build/
+local.properties
+
+# Android Studio
+.idea/
+*.iml
+.DS_Store
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Signing (never commit)
+*.jks
+*.keystore
+keystore.properties
+
+# Firebase (API keys in public repo — keep local only)
+app/google-services.json
+
+# Secrets / env
+.env
+*.env
