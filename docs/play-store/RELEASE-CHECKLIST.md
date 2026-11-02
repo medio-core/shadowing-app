@@ -31,9 +31,11 @@ Android Studio の「Generate Signed App Bundle」を使うこと。
 
 出力先:
 
-- 正本: `app/build/outputs/bundle/release/app-release.aab`
-- Android Studio の署名ウィザード出力 `app/release/app-release.aab` は、過去の成果物が
-  残る場合があるため正本として扱わない
+- Gradleビルド成果物: `app/build/outputs/bundle/release/app-release.aab`
+- Play提出候補: `app/release/app-release.aab`（Android Studio署名ウィザード出力）
+
+どちらのパスにも過去の成果物が残る場合があるため、ファイル名だけで最新版と判断せず、
+更新時刻、署名エントリ、SHA-256を毎回確認する。
 
 `keystore.properties` の 4 項目がすべて有効で、指定された鍵を実際に開ける場合のみ、
 コマンドライン出力も署名済みになる。タスク名に `signReleaseBundle` が表示されても、
@@ -43,7 +45,8 @@ Android Studio の「Generate Signed App Bundle」を使うこと。
 
 ```bash
 ./gradlew :app:lintRelease :app:test
-powershell -ExecutionPolicy Bypass -File debug/verify_release_aab.ps1
+powershell -ExecutionPolicy Bypass -File debug/verify_release_aab.ps1 `
+  -BundlePath app/release/app-release.aab
 ```
 
 lint エラー 0 件であり、AAB検証スクリプトが終了コード0になること。
@@ -51,11 +54,10 @@ lint エラー 0 件であり、AAB検証スクリプトが終了コード0に�
 
 2026-11-02 に新しい AdMob アプリ ID・バナー広告ユニット ID を反映後、
 単体テスト 36 件、`lintRelease`、`bundleRelease` が成功した。
-正本 AAB は `bundletool validate` に成功したが、署名エントリがないため現時点では未署名。
-未署名成果物 `app/build/outputs/bundle/release/app-release.aab` は 9,239,012 bytes、
-SHA-256 は `16D71C79C41D9301D132E1E9C4404E8225172B0E765B4837E01E40B404E6AD23`。
-既存の `keystore.properties` のパスワードでは設定先の鍵を開けなかったため、
-Android Studio の署名ウィザードで正しいパスワードを入力して最終AABを再生成する。
+Android Studio の署名ウィザードで再生成した提出候補は署名エントリ1件を持ち、
+`jarsigner -verify` と `bundletool validate` に成功した。
+`app/release/app-release.aab` は 9,261,749 bytes、SHA-256 は
+`F24B7DCEED1016AD4D3CB8A803043EF951FBCAB1C853B169C3F345E67F12DC31`。
 
 ## 2. デベロッパーアカウントの経緯
 
@@ -266,8 +268,8 @@ AdMob側では `com.shadowing.app` がGoogle Play検索に表示されなかっ�
 ## 4. 提出後の確認
 
 - [x] 最新ソースから再生成した未署名 AAB を `bundletool validate` で検証
-- [ ] Android Studio の署名ウィザードで最終署名 AABを再生成
-- [ ] 最終署名 AAB の署名エントリと証明書を検証
+- [x] Android Studio の署名ウィザードで最終署名 AABを再生成
+- [x] 最終署名 AAB の署名エントリと証明書を検証
 - [ ] 最終署名 AAB 由来の APK をエミュレーターへ入れ、外部 MP4、英語 SRT、
       翻訳 SRT、通常再生、字幕移動、区間再生ボタン、テスト広告を確認
 - [ ] 内部テストトラックで実機インストールし、起動・動画選択・

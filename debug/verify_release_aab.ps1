@@ -34,8 +34,9 @@ if ($signatureEntries.Count -eq 0) {
     exit 2
 }
 
-& $jarsigner -verify $resolvedBundle | Out-Host
+$jarsignerOutput = @(& $jarsigner -verify $resolvedBundle 2>&1)
 if ($LASTEXITCODE -ne 0) {
+    $jarsignerOutput | Select-Object -Last 20 | Out-Host
     [Console]::Error.WriteLine("AABの署名検証に失敗しました: $resolvedBundle")
     exit 3
 }
