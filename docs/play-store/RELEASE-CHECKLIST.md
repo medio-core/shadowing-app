@@ -31,8 +31,13 @@ Android Studio の「Generate Signed App Bundle」を使うこと。
 
 出力先:
 
-- コマンドライン: `app/build/outputs/bundle/release/app-release.aab`（現在は無署名）
-- Android Studio の署名ウィザード: `app/release/app-release.aab`（最新ソースから2026-11-02 12:49に再生成・検証済み）
+- 正本: `app/build/outputs/bundle/release/app-release.aab`
+- Android Studio の署名ウィザード出力 `app/release/app-release.aab` は、過去の成果物が
+  残る場合があるため正本として扱わない
+
+`keystore.properties` の 4 項目がすべて有効で、指定された鍵を実際に開ける場合のみ、
+コマンドライン出力も署名済みになる。タスク名に `signReleaseBundle` が表示されても、
+署名エントリの実測なしに署名済みと判断しない。
 
 ### 検証コマンド
 
@@ -42,11 +47,13 @@ Android Studio の「Generate Signed App Bundle」を使うこと。
 
 lint エラー 0 件であること。
 
-2026-11-02 に単体テスト 36 件、`lintRelease`、`bundleRelease` が成功した。
-コマンドライン AAB は無署名。最新ソースから Android Studio で再生成した署名 AAB は、
-`jarsigner -verify`、`bundletool validate`、Universal APK のエミュレーター導入に成功。
-提出候補 `app/release/app-release.aab` は 9,261,623 bytes、SHA-256 は
-`FCD8ECEBD79C50DAB4D26734D3C34ED2392354D1918E12D8A3A85AD43696B64A`。
+2026-11-02 に新しい AdMob アプリ ID・バナー広告ユニット ID を反映後、
+単体テスト 36 件、`lintRelease`、`bundleRelease` が成功した。
+正本 AAB は `bundletool validate` に成功したが、署名エントリがないため現時点では未署名。
+未署名成果物 `app/build/outputs/bundle/release/app-release.aab` は 9,239,012 bytes、
+SHA-256 は `16D71C79C41D9301D132E1E9C4404E8225172B0E765B4837E01E40B404E6AD23`。
+既存の `keystore.properties` のパスワードでは設定先の鍵を開けなかったため、
+Android Studio の署名ウィザードで正しいパスワードを入力して最終AABを再生成する。
 
 ## 2. デベロッパーアカウントの経緯
 
@@ -194,6 +201,19 @@ D-U-N-S 番号、権限を持つ担当者の本人確認書類、組織を証明
 **アップロード鍵のリセット**を申請し、パスワードを管理下に置いた
 新しい鍵へ差し替えるのが望ましい。
 
+### AdMob の状態（2026年11月2日）
+
+- [x] `skgapplication@gmail.com` でAdMobアカウントを作成
+- [x] Androidアプリ「シャドーイング専用プレーヤー」を追加
+- [x] バナー広告ユニット「トップバナー」を作成
+- [x] 新しいAdMobアプリID・バナー広告ユニットIDをアプリへ反映
+- [ ] AdMobのお支払いプロファイルを完成させる
+- [ ] Play移行・公開後、AdMobアプリへGoogle Playのストア情報をリンクする
+- [ ] 「プライバシーとメッセージ」でEEA・英国向け同意メッセージを公開する
+
+AdMob側では `com.shadowing.app` がGoogle Play検索に表示されなかったため、現時点では
+ストア未登録扱いで追加している。ストア情報が検索可能になった後にリンクし、審査を開始する。
+
 ## 3. Play Console の入力内容
 
 ### ストアの掲載情報
@@ -243,8 +263,10 @@ D-U-N-S 番号、権限を持つ担当者の本人確認書類、組織を証明
 
 ## 4. 提出後の確認
 
-- [x] 最新ソースから再生成した署名 AAB を `jarsigner` と `bundletool` で検証
-- [x] 最新署名 AAB 由来の APK をエミュレーターへ入れ、外部 MP4、英語 SRT、
+- [x] 最新ソースから再生成した未署名 AAB を `bundletool validate` で検証
+- [ ] Android Studio の署名ウィザードで最終署名 AABを再生成
+- [ ] 最終署名 AAB の署名エントリと証明書を検証
+- [ ] 最終署名 AAB 由来の APK をエミュレーターへ入れ、外部 MP4、英語 SRT、
       翻訳 SRT、通常再生、字幕移動、区間再生ボタン、テスト広告を確認
 - [ ] 内部テストトラックで実機インストールし、起動・動画選択・
       字幕読み込み・広告表示を確認
