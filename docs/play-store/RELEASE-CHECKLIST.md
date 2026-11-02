@@ -43,9 +43,11 @@ Android Studio の「Generate Signed App Bundle」を使うこと。
 
 ```bash
 ./gradlew :app:lintRelease :app:test
+powershell -ExecutionPolicy Bypass -File debug/verify_release_aab.ps1
 ```
 
-lint エラー 0 件であること。
+lint エラー 0 件であり、AAB検証スクリプトが終了コード0になること。
+`jarsigner -verify` は未署名でも終了コード0になる場合があるため、単独では判定しない。
 
 2026-11-02 に新しい AdMob アプリ ID・バナー広告ユニット ID を反映後、
 単体テスト 36 件、`lintRelease`、`bundleRelease` が成功した。
