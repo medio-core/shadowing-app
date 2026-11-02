@@ -3,6 +3,7 @@
     <string name="app_name">シャドーイング専用プレーヤー</string>
     <string name="admob_app_id">ca-app-pub-8586807307117478~6282689543</string>
     <string name="admob_banner_unit_id">ca-app-pub-8586807307117478/7042601827</string>
-    <string name="legal_last_updated">2026年6月2日</string>
+    <string name="privacy_policy_last_updated">2026年11月2日</string>
+    <string name="terms_of_service_last_updated">2026年6月2日</string>
     <string name="legal_contact_email">skgapplication@gmail.com</string>
 </resources>

@@ -19,6 +19,8 @@ data class JapaneseMatchResult(
     val quality: JapaneseMatchQuality,
     val match: JapaneseMatch? = null,
     val centerDistanceMs: Long = 0L,
+    /** 区間同士の隙間（ms）。重なっている場合は 0。 */
+    val edgeGapMs: Long = 0L,
 ) {
     /** 日本語テキストを表示してよいか。 */
     val hasDisplayableJapanese: Boolean
@@ -44,9 +46,13 @@ data class JapaneseMatch(
 object SubtitleMatcher {
 
     /**
-     * 重なりなしでも「おおよそ近い」とみなす中心時刻の最大差（ms）。
+     * 重なりなしでも「おおよそ近い」とみなす区間同士の最大の隙間（ms）。
+     *
+     * 中心時刻の差ではなく隙間で判定する。中心間距離は cue の長さに比例して
+     * 大きくなるため、隙間が 200ms しかない隣接 cue でも、双方が長ければ
+     * しきい値を超えてしまい NONE と誤判定される。
      */
-    const val MAX_CENTER_GAP_MS = 1500L
+    const val MAX_EDGE_GAP_MS = 1000L
 
     /**
      * 基準cue（調整済み）に対する日本語マッチを判定する。
@@ -66,10 +72,11 @@ object SubtitleMatcher {
         val centerDist = kotlin.math.abs(
             centerMs(reference) - centerMs(best.cue),
         )
+        val gap = gapMs(reference, best.cue)
 
         val quality = when {
             best.overlapMs > 0L -> JapaneseMatchQuality.OVERLAP
-            centerDist <= MAX_CENTER_GAP_MS -> JapaneseMatchQuality.NEARBY
+            gap <= MAX_EDGE_GAP_MS -> JapaneseMatchQuality.NEARBY
             else -> JapaneseMatchQuality.NONE
         }
 
@@ -77,6 +84,7 @@ object SubtitleMatcher {
             quality = quality,
             match = if (quality == JapaneseMatchQuality.NONE) null else best,
             centerDistanceMs = centerDist,
+            edgeGapMs = gap,
         )
     }
 
@@ -113,10 +121,7 @@ object SubtitleMatcher {
 
         val best = findBestCandidate(reference, japaneseCues, japaneseOffsetMs)
             ?: return emptyList()
-        val centerDist = kotlin.math.abs(
-            centerMs(reference) - centerMs(best.cue),
-        )
-        return if (centerDist <= MAX_CENTER_GAP_MS) {
+        return if (gapMs(reference, best.cue) <= MAX_EDGE_GAP_MS) {
             listOf(best)
         } else {
             emptyList()
@@ -133,6 +138,7 @@ object SubtitleMatcher {
     ): JapaneseMatch? {
         var best: JapaneseMatch? = null
         var bestCenterDist = Long.MAX_VALUE
+        var bestGap = Long.MAX_VALUE
 
         japaneseCues.forEachIndexed { listIndex, raw ->
             val candidate = raw.withOffset(japaneseOffsetMs)
@@ -140,14 +146,17 @@ object SubtitleMatcher {
             val centerDist = kotlin.math.abs(
                 centerMs(reference) - centerMs(candidate),
             )
+            val gap = gapMs(reference, candidate)
             val currentBest = best
             val better = when {
                 currentBest == null -> true
                 overlap > currentBest.overlapMs -> true
+                // 重なりが同じ長さなら、中心が近いほうを採る。
                 overlap == currentBest.overlapMs && overlap > 0L &&
                     centerDist < bestCenterDist -> true
+                // どちらも重ならないなら、区間の隙間が小さいほうを採る。
                 overlap == 0L && currentBest.overlapMs == 0L &&
-                    centerDist < bestCenterDist -> true
+                    gap < bestGap -> true
                 else -> false
             }
             if (better) {
@@ -157,6 +166,7 @@ object SubtitleMatcher {
                     overlapMs = overlap,
                 )
                 bestCenterDist = centerDist
+                bestGap = gap
             }
         }
 
@@ -170,6 +180,17 @@ object SubtitleMatcher {
         val start = maxOf(a.startMs, b.startMs)
         val end = minOf(a.endMs, b.endMs)
         return (end - start).coerceAtLeast(0L)
+    }
+
+    /**
+     * 2つの字幕区間の隙間（ミリ秒）を返す。重なっている場合は 0。
+     */
+    private fun gapMs(a: SubtitleCue, b: SubtitleCue): Long {
+        return maxOf(
+            a.startMs - b.endMs,
+            b.startMs - a.endMs,
+            0L,
+        )
     }
 
     /**

@@ -46,7 +46,7 @@ class SubtitleMatcherTest {
         assertEquals(JapaneseMatchQuality.NONE, result.quality)
         assertFalse(result.hasDisplayableJapanese)
         assertNull(result.match)
-        assertTrue(result.centerDistanceMs > SubtitleMatcher.MAX_CENTER_GAP_MS)
+        assertTrue(result.edgeGapMs > SubtitleMatcher.MAX_EDGE_GAP_MS)
     }
 
     @Test

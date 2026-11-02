@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import re
 import time
@@ -10,13 +11,6 @@ from pathlib import Path
 from deep_translator import GoogleTranslator
 
 
-SOURCE_PATH = Path(
-    r"\\192.168.1.66\video\Movie"
-    r"\Breaking.Bad.S01-S05.1080p.BluRay.10bit.HEVC.6CH-MkvCage.ws"
-    r"\Breaking.Bad.S01.1080p.BluRay.10bit.HEVC.6CH-MkvCage.ws"
-    r"\英語学習用\Breaking.Bad.S01e01.2025-03-09.srt"
-)
-OUTPUT_PATH = SOURCE_PATH.with_name("Breaking.Bad.S01e01.2025-03-09.ja.srt")
 CACHE_PATH = Path(__file__).with_name("translate_srt_to_japanese_cache.json")
 
 TIMESTAMP_PATTERN = re.compile(
@@ -94,17 +88,29 @@ def build_output(blocks: list[list[str]], cache: dict[str, str]) -> str:
     return "\n\n".join(output_blocks) + "\n"
 
 
+def parse_args() -> argparse.Namespace:
+    """コマンドライン引数を解析する。"""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--source", type=Path, required=True, help="翻訳するSRTファイル")
+    parser.add_argument("--output", type=Path, help="翻訳後のSRT出力先")
+    return parser.parse_args()
+
+
 def main() -> None:
     """SRTを日本語へ翻訳して出力する。"""
-    content = read_text_file(SOURCE_PATH)
+    args = parse_args()
+    output_path = args.output or args.source.with_name(
+        f"{args.source.stem}.ja{args.source.suffix}",
+    )
+    content = read_text_file(args.source)
     blocks = split_blocks(content)
     texts = [text_part(block) for block in blocks]
     cache = load_cache()
     translator = GoogleTranslator(source="en", target="ja")
 
     translate_missing_texts(texts, cache, translator)
-    OUTPUT_PATH.write_text(build_output(blocks, cache), encoding="utf-8")
-    print(f"wrote: {OUTPUT_PATH}")
+    output_path.write_text(build_output(blocks, cache), encoding="utf-8")
+    print(f"wrote: {output_path}")
 
 
 if __name__ == "__main__":

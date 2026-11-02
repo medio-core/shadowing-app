@@ -29,3 +29,10 @@ app/google-services.json
 # Secrets / env
 .env
 *.env
+
+# Local operational handoff (may contain account or signing details)
+HANDOFF.md
+
+# Python-generated caches (debug/store asset scripts)
+__pycache__/
+*.py[cod]

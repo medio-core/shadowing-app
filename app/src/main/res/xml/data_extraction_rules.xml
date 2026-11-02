@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  API 31 以降向けのバックアップ／端末間転送の対象設定。
+  playback_session、work_settings、app_settings は端末内だけで扱うため、
+  クラウドバックアップと端末間転送の両方から除外する。
+  playback_session の SAF URI 権限は復元されない。
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude
+            domain="sharedpref"
+            path="playback_session.xml" />
+        <exclude
+            domain="sharedpref"
+            path="work_settings.xml" />
+        <exclude
+            domain="sharedpref"
+            path="app_settings.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude
+            domain="sharedpref"
+            path="playback_session.xml" />
+        <exclude
+            domain="sharedpref"
+            path="work_settings.xml" />
+        <exclude
+            domain="sharedpref"
+            path="app_settings.xml" />
+    </device-transfer>
+</data-extraction-rules>

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  API 26-30 向けのバックアップ対象設定。
+
+  playback_session、work_settings、app_settings は端末内だけで扱うデータのため、
+  バックアップ対象から除外する。playback_session の SAF URI 権限は
+  端末をまたいで復元されず、復元後に開けない参照になる。
+-->
+<full-backup-content>
+    <exclude
+        domain="sharedpref"
+        path="playback_session.xml" />
+    <exclude
+        domain="sharedpref"
+        path="work_settings.xml" />
+    <exclude
+        domain="sharedpref"
+        path="app_settings.xml" />
+</full-backup-content>

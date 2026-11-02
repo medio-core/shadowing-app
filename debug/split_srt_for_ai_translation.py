@@ -2,16 +2,10 @@
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 
 
-SOURCE_PATH = Path(
-    r"\\192.168.1.66\video\Movie"
-    r"\Breaking.Bad.S01-S05.1080p.BluRay.10bit.HEVC.6CH-MkvCage.ws"
-    r"\Breaking.Bad.S01.1080p.BluRay.10bit.HEVC.6CH-MkvCage.ws"
-    r"\英語学習用\Breaking.Bad.S01e01.2025-03-09.srt"
-)
-CHUNK_DIR = Path(__file__).with_name("ai_translation_chunks")
 CHUNK_RANGES = (
     (1, 160),
     (161, 320),
@@ -43,10 +37,24 @@ def block_number(block: str) -> int | None:
     return int(first_line) if first_line.isdigit() else None
 
 
+def parse_args() -> argparse.Namespace:
+    """コマンドライン引数を解析する。"""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--source", type=Path, required=True, help="分割するSRTファイル")
+    parser.add_argument(
+        "--chunk-dir",
+        type=Path,
+        default=Path(__file__).with_name("ai_translation_chunks"),
+        help="チャンクの出力ディレクトリ",
+    )
+    return parser.parse_args()
+
+
 def main() -> None:
     """指定範囲ごとのSRTチャンクを出力する。"""
-    CHUNK_DIR.mkdir(exist_ok=True)
-    blocks = split_blocks(read_srt(SOURCE_PATH))
+    args = parse_args()
+    args.chunk_dir.mkdir(parents=True, exist_ok=True)
+    blocks = split_blocks(read_srt(args.source))
 
     for start, end in CHUNK_RANGES:
         selected = [
@@ -54,7 +62,7 @@ def main() -> None:
             if (number := block_number(block)) is not None
             and start <= number <= end
         ]
-        output_path = CHUNK_DIR / f"source_{start:03d}_{end:03d}.srt"
+        output_path = args.chunk_dir / f"source_{start:03d}_{end:03d}.srt"
         output_path.write_text("\n\n".join(selected) + "\n", encoding="utf-8")
         print(f"wrote {output_path}")
 

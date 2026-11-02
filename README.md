@@ -19,9 +19,9 @@
 
 ## 必要環境
 
-- Android Studio Hedgehog (2023.1.1) 以降
+- Android Studio（AGP 9.2.1 対応版）
 - JDK 17
-- Android SDK 35
+- Android SDK 36
 
 ## ビルド手順
 
@@ -70,7 +70,7 @@ Hello
 
 - 日英で **行数・分割が違ってもOK**
 - 内部字幕は読み取れたテキスト字幕のみ SRT と同じ操作に対応します
-- 対応判定: **重なりあり** → 表示 / **近いのみ** → 不明確と表示 / **1.5秒以上離れる** → 対応なし
+- 対応判定: 重なりありは表示、区間の隙間が 1.0 秒以内は不明確、1.0 秒を超える隙間は対応なし
 - **シーク・リピートは英語 SRT**（＋英語オフセット）を基準
 - 日本語オフセットで日本語側の時刻をずらし、マッチする行が変わる
 - ファイルは Storage Access Framework 経由で読み込みます
@@ -80,18 +80,18 @@ Hello
 - Kotlin
 - Jetpack Compose (Material 3)
 - Media3 ExoPlayer
-- minSdk 26 / targetSdk 35
+- minSdk 26 / targetSdk 36
 
-## リリース準備（v1.2.83）
+## リリース準備（v1.6.1）
 
 - **設定画面**: 起動時セッション復元 ON/OFF、初期再生速度、初期スライダー位置
 - **初回ガイド**: 初回起動時に使い方ダイアログ（設定から再表示可）
 - **法的情報**: プライバシーポリシー・利用規約をアプリ内表示（設定 → 法的情報）
-- **クラッシュレポート**: Firebase Crashlytics（`app/google-services.json` を本番用に差し替え）
+- **クラッシュレポート**: Firebase Crashlytics（ビルド前に本番用 `app/google-services.json` を配置。ファイルは Git 管理外）
 - **広告**: 画面上部に AdMob バナー（本番 ID 設定済み）
 - **開発者向け（デバッグビルドのみ）**: 設定から広告の表示/非表示を切り替え可能
 
-公開前に `strings.xml` の `legal_contact_email` を実際の連絡先に差し替えてください。
+`strings.xml` の `legal_contact_email` には公開用の問い合わせ先を設定済みです。
 
 ## 作品ごとの設定（最大30件）
 
@@ -126,10 +126,19 @@ https://medio-core.github.io/shadowing-app/privacy-policy.html
 
 1. ダッシュボードの必須タスク（ストア掲載情報・データ セーフティ・レーティング・広告あり 等）を完了
 2. 上記 **プライバシーポリシー URL** を登録
-3. **製品版**に署名付き AAB（例: v1.6.0 / versionCode 128）をアップロード
+3. **製品版**に署名付き AAB（v1.6.1 / versionCode 129）をアップロード
 4. リリースノートを書いて **審査に提出** → 承認後に段階的または一括公開
 
 詳細は会話ログまたは Play Console のガイドを参照してください。
+
+## v1.6.1
+
+- Play 要件に合わせ targetSdk / compileSdk を 36 に更新
+- AdMob、Media3、Firebase などの依存ライブラリを更新
+- EEA 向けの UMP 同意取得と、広告プライバシー設定の再表示導線を追加
+- R8 とリソース縮小を有効化
+- ランチャーアイコン、バックアップ除外、プライバシーポリシーを更新
+- 字幕マッチングと字幕テキスト抽出の既存不具合を修正
 
 ## v1.6.0
 

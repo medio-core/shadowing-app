@@ -17,6 +17,12 @@ object InternalSubtitleExtractor {
     private const val DEFAULT_CUE_DURATION_MS = 3000L
     private const val MAX_SAMPLE_BYTES = 1024 * 1024
 
+    /**
+     * 行頭にあっても字幕本文の一部とみなす開き引用符。
+     * アポストロフィ（`'`）は行頭ではスタイルノイズであることが多いため含めない。
+     */
+    private val LEADING_QUOTE_CHARS = setOf('"', '“')
+
     private val supportedMimeTypes = setOf(
         "application/x-subrip",
         "text/srt",
@@ -298,8 +304,19 @@ object InternalSubtitleExtractor {
             return Int.MIN_VALUE
         }
 
+        // 行頭の開き引用符は本文の一部。直後の文字を実質的な先頭として採点し、
+        // 引用符そのものは記号ペナルティの対象から除く。これがないと
+        // 引用符を1文字捨てた候補のほうが高得点になり、本文の引用符が消える。
+        val quoteLead = if (
+            first() in LEADING_QUOTE_CHARS && getOrNull(1)?.isLetterOrDigit() == true
+        ) {
+            1
+        } else {
+            0
+        }
+
         var score = 0
-        val first = first()
+        val first = this[quoteLead]
         if (first.isLetterOrDigit() || first == '"' || first == '\'' || first == '(') {
             score += 8
         }
@@ -319,7 +336,7 @@ object InternalSubtitleExtractor {
             score -= 20
         }
         score += count { it.isLetterOrDigit() || it.isWhitespace() }
-        score -= count { !it.isLetterOrDigit() && !it.isWhitespace() } * 2
+        score -= (count { !it.isLetterOrDigit() && !it.isWhitespace() } - quoteLead) * 2
         score -= length.coerceAtMost(2)
         return score
     }

@@ -2,23 +2,17 @@
 
 from __future__ import annotations
 
+import argparse
 import re
 from pathlib import Path
 
 
-OUTPUT_PATH = Path(
-    r"\\192.168.1.66\video\Movie"
-    r"\Breaking.Bad.S01-S05.1080p.BluRay.10bit.HEVC.6CH-MkvCage.ws"
-    r"\Breaking.Bad.S01.1080p.BluRay.10bit.HEVC.6CH-MkvCage.ws"
-    r"\英語学習用\Breaking.Bad.S01e01.2025-03-09.ja.ai.srt"
-)
-CHUNK_DIR = Path(__file__).with_name("ai_translation_chunks")
-CHUNK_FILES = (
-    CHUNK_DIR / "translated_001_160.srt",
-    CHUNK_DIR / "translated_161_320.srt",
-    CHUNK_DIR / "translated_321_480.srt",
-    CHUNK_DIR / "translated_481_640.srt",
-    CHUNK_DIR / "translated_641_771.srt",
+CHUNK_FILE_NAMES = (
+    "translated_001_160.srt",
+    "translated_161_320.srt",
+    "translated_321_480.srt",
+    "translated_481_640.srt",
+    "translated_641_771.srt",
 )
 TIMESTAMP_PATTERN = re.compile(
     r"^\d{2}:\d{2}:\d{2},\d{3}\s+-->\s+\d{2}:\d{2}:\d{2},\d{3}$"
@@ -55,16 +49,31 @@ def validate_blocks(blocks: list[list[str]]) -> None:
         raise ValueError(f"Invalid cue count: expected 771, got {expected - 1}")
 
 
+def parse_args() -> argparse.Namespace:
+    """コマンドライン引数を解析する。"""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output", type=Path, required=True, help="結合後のSRT出力先")
+    parser.add_argument(
+        "--chunk-dir",
+        type=Path,
+        default=Path(__file__).with_name("ai_translation_chunks"),
+        help="翻訳済みチャンクのディレクトリ",
+    )
+    return parser.parse_args()
+
+
 def main() -> None:
     """翻訳済みチャンクを結合して出力する。"""
+    args = parse_args()
     blocks: list[list[str]] = []
-    for path in CHUNK_FILES:
+    for file_name in CHUNK_FILE_NAMES:
+        path = args.chunk_dir / file_name
         blocks.extend(read_chunk(path))
 
     validate_blocks(blocks)
     content = "\n\n".join("\n".join(block) for block in blocks) + "\n"
-    OUTPUT_PATH.write_text(content, encoding="utf-8")
-    print(f"wrote: {OUTPUT_PATH}")
+    args.output.write_text(content, encoding="utf-8")
+    print(f"wrote: {args.output}")
     print(f"cue_count: {len(blocks)}")
 
 

@@ -1,9 +1,11 @@
 package com.shadowing.app
 
+import android.annotation.SuppressLint
 import android.os.Bundle
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.view.KeyEvent
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -12,11 +14,14 @@ import androidx.activity.viewModels
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.core.content.IntentCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.shadowing.app.ads.ConsentManager
 import com.shadowing.app.ads.MobileAdsHelper
 import com.shadowing.app.ui.FirstLaunchGuideDialog
 import com.shadowing.app.ui.SettingsScreen
@@ -34,24 +39,27 @@ class MainActivity : ComponentActivity() {
     private val pickVideoLauncher =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null) {
-                persistReadPermission(uri)
+                val permissionPersisted = persistReadPermission(uri)
                 viewModel.setVideoUri(uri)
+                notifyIfPermissionIsTemporary(permissionPersisted)
             }
         }
 
     private val pickJapaneseSrtLauncher =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null) {
-                persistReadPermission(uri)
+                val permissionPersisted = persistReadPermission(uri)
                 viewModel.loadJapaneseSrt(uri)
+                notifyIfPermissionIsTemporary(permissionPersisted)
             }
         }
 
     private val pickEnglishSrtLauncher =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null) {
-                persistReadPermission(uri)
+                val permissionPersisted = persistReadPermission(uri)
                 viewModel.loadEnglishSrt(uri)
+                notifyIfPermissionIsTemporary(permissionPersisted)
             }
         }
 
@@ -67,14 +75,23 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        MobileAdsHelper.ensureInitialized(this)
         setupMediaSession()
 
         setContent {
             val appSettings by viewModel.appSettings.collectAsStateWithLifecycle()
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            val canRequestAds by ConsentManager.canRequestAds
+                .collectAsStateWithLifecycle()
+            val privacyOptionsRequired by ConsentManager.privacyOptionsRequired
+                .collectAsStateWithLifecycle()
             var showSettings by remember { mutableStateOf(false) }
             var forceShowGuide by remember { mutableStateOf(false) }
+
+            LaunchedEffect(canRequestAds) {
+                if (canRequestAds) {
+                    MobileAdsHelper.ensureInitialized(applicationContext)
+                }
+            }
 
             BackHandler(enabled = showSettings) {
                 showSettings = false
@@ -99,6 +116,16 @@ class MainActivity : ComponentActivity() {
                                 forceShowGuide = true
                                 showSettings = false
                             },
+                            privacyOptionsRequired = privacyOptionsRequired,
+                            onOpenPrivacyOptions = {
+                                ConsentManager.showPrivacyOptionsForm(this) { error ->
+                                    if (error != null) {
+                                        viewModel.showSettingsMessage(
+                                            "プライバシー設定を開けませんでした。",
+                                        )
+                                    }
+                                }
+                            },
                             onDebugHideAds = {
                                 viewModel.setAdsRemoved(true)
                                 viewModel.showSettingsMessage(
@@ -119,10 +146,10 @@ class MainActivity : ComponentActivity() {
                                 pickVideoLauncher.launch(arrayOf("video/*"))
                             },
                             onPickJapaneseSrt = {
-                                pickJapaneseSrtLauncher.launch(arrayOf("*/*"))
+                                pickJapaneseSrtLauncher.launch(SRT_MIME_TYPES)
                             },
                             onPickEnglishSrt = {
-                                pickEnglishSrtLauncher.launch(arrayOf("*/*"))
+                                pickEnglishSrtLauncher.launch(SRT_MIME_TYPES)
                             },
                             onOpenSettings = { showSettings = true },
                         )
@@ -141,11 +168,19 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+
+        // UMP がフォーム表示に使う画面コンテナを setContent で作成してから、
+        // 起動ごとの同意情報を更新し、広告リクエスト可否を確定する。
+        ConsentManager.gatherConsent(this)
     }
 
     /**
      * Bluetooth機器などのメディアボタンを字幕操作へ割り当てる。
+     *
+     * ComponentActivity.dispatchKeyEvent は androidx 内部向けに
+     * @RestrictedApi が付いているが、Activity のオーバーライドとしては正当なため抑制する。
      */
+    @SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (!isShadowingMediaKey(event.keyCode)) {
             return super.dispatchKeyEvent(event)
@@ -210,8 +245,11 @@ class MainActivity : ComponentActivity() {
                     }
 
                     override fun onMediaButtonEvent(mediaButtonIntent: android.content.Intent): Boolean {
-                        val keyEvent = mediaButtonIntent
-                            .getParcelableExtra<KeyEvent>(android.content.Intent.EXTRA_KEY_EVENT)
+                        val keyEvent = IntentCompat.getParcelableExtra(
+                            mediaButtonIntent,
+                            android.content.Intent.EXTRA_KEY_EVENT,
+                            KeyEvent::class.java,
+                        )
                             ?: return super.onMediaButtonEvent(mediaButtonIntent)
                         if (keyEvent.action == KeyEvent.ACTION_UP &&
                             isShadowingMediaKey(keyEvent.keyCode)
@@ -249,14 +287,45 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * 可能な場合のみ URI 読み取り権限を永続化する。
+     * URI 読み取り権限を永続化する。
+     *
+     * @param uri 永続化するURI
+     * @return 永続権限を取得済み、または今回取得できた場合 true
      */
-    private fun persistReadPermission(uri: android.net.Uri) {
-        runCatching {
+    private fun persistReadPermission(uri: android.net.Uri): Boolean {
+        val persisted = runCatching {
             contentResolver.takePersistableUriPermission(
                 uri,
                 android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION,
             )
+        }.isSuccess
+        return persisted || contentResolver.persistedUriPermissions.any {
+            it.uri == uri && it.isReadPermission
         }
+    }
+
+    /**
+     * 永続権限を取得できない場合に、次回再選択が必要な可能性を通知する。
+     *
+     * @param permissionPersisted 永続権限を取得できたか
+     */
+    private fun notifyIfPermissionIsTemporary(permissionPersisted: Boolean) {
+        if (permissionPersisted) {
+            return
+        }
+        Toast.makeText(
+            this,
+            "このファイルは次回起動時に再選択が必要になる場合があります。",
+            Toast.LENGTH_LONG,
+        ).show()
+    }
+
+    companion object {
+        private val SRT_MIME_TYPES = arrayOf(
+            "application/x-subrip",
+            "text/plain",
+            "text/srt",
+            "application/octet-stream",
+        )
     }
 }

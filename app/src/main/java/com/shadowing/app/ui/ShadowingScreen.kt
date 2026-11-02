@@ -105,6 +105,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.text.Cue
 import androidx.media3.common.text.CueGroup
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
@@ -478,6 +479,7 @@ private fun ShadowingMainSections(
             onPlaybackPositionChanged = viewModel::onPlaybackPositionChanged,
             onPlayerSubtitleTextChanged = viewModel::onPlayerSubtitleTextChanged,
             onSegmentFinished = viewModel::onSegmentPlaybackFinished,
+            onPlaybackError = viewModel::onPlaybackError,
             onSessionRestoreSeekApplied = viewModel::onSessionRestoreSeekApplied,
         )
 
@@ -925,7 +927,11 @@ private fun List<Cue>.toDisplayText(): String {
 
 /**
  * ExoPlayer による動画再生エリア。
+ *
+ * PlayerView の表示制御と Player.Listener.onCues(List<Cue>) は
+ * media3 の @UnstableApi のため、この関数単位で opt-in する。
  */
+@androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 private fun VideoPlayerSection(
     videoUri: Uri?,
@@ -944,6 +950,7 @@ private fun VideoPlayerSection(
     onPlaybackPositionChanged: (Long, Long) -> Unit,
     onPlayerSubtitleTextChanged: (String, Long) -> Unit,
     onSegmentFinished: () -> Unit,
+    onPlaybackError: (String) -> Unit,
     onSessionRestoreSeekApplied: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -987,6 +994,23 @@ private fun VideoPlayerSection(
                 if (subtitleText.isNotBlank()) {
                     onPlayerSubtitleTextChanged(subtitleText, player.currentPosition)
                 }
+            }
+
+            /**
+             * 動画の終端で通常再生・区間再生の状態を解除する。
+             */
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_ENDED) {
+                    onSegmentFinished()
+                }
+            }
+
+            /**
+             * 再生エラーを画面状態へ通知し、プレイヤーを停止する。
+             */
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                player.pause()
+                onPlaybackError(error.message ?: error.errorCodeName)
             }
         }
         player.addListener(listener)
@@ -1062,8 +1086,17 @@ private fun VideoPlayerSection(
         if (videoUri == null || !isPlayingSegment || segmentEndMs <= seekStartMs) {
             return@LaunchedEffect
         }
-        while (true) {
-            if (player.currentPosition >= segmentEndMs - 50L) {
+        while (
+            player.playbackState != Player.STATE_ENDED &&
+                player.playerError == null
+        ) {
+            val duration = player.duration.takeIf { it > 0L } ?: 0L
+            val effectiveSegmentEndMs = if (duration > 0L) {
+                minOf(segmentEndMs, duration)
+            } else {
+                segmentEndMs
+            }
+            if (player.currentPosition >= effectiveSegmentEndMs - 50L) {
                 player.pause()
                 player.seekTo(seekStartMs)
                 onSegmentFinished()
@@ -1509,7 +1542,7 @@ private fun japaneseMatchHint(result: JapaneseMatchResult?): String? {
         JapaneseMatchQuality.NEARBY ->
             "対応は不明確（時刻が近いのみ）"
         JapaneseMatchQuality.NONE -> {
-            val gapSec = formatOffsetSec(result.centerDistanceMs)
+            val gapSec = formatOffsetSec(result.edgeGapMs)
             "最も近い行とも $gapSec 離れています。翻訳オフセットを調整"
         }
     }

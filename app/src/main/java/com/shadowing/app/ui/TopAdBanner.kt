@@ -22,12 +22,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.google.android.gms.ads.AdListener
@@ -36,6 +37,7 @@ import com.google.android.gms.ads.AdSize
 import com.google.android.gms.ads.AdView
 import com.google.android.gms.ads.LoadAdError
 import com.shadowing.app.R
+import com.shadowing.app.ads.ConsentManager
 import com.shadowing.app.ads.MobileAdsHelper
 
 private const val TAG = "TopAdBanner"
@@ -76,16 +78,17 @@ fun TopAdBanner(
     val adUnitId = context.getString(R.string.admob_banner_unit_id)
     val isDebugBuild =
         (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
-    var adsReady by remember { mutableStateOf(false) }
+    val canRequestAds by ConsentManager.canRequestAds.collectAsStateWithLifecycle()
+    // MainActivity 側の明示初期化完了と、現在の広告リクエスト許可を両方確認する。
+    val adsReady by MobileAdsHelper.isReady.collectAsStateWithLifecycle()
     var shouldLoad by remember { mutableStateOf(false) }
     var loadFailed by remember { mutableStateOf(false) }
     var lastError by remember { mutableStateOf<String?>(null) }
     var retryCount by remember { mutableIntStateOf(0) }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
 
-    LaunchedEffect(Unit) {
-        MobileAdsHelper.ensureInitialized(context) {
-            adsReady = true
+    LaunchedEffect(adsReady, canRequestAds) {
+        if (adsReady && canRequestAds) {
             shouldLoad = true
         }
     }
@@ -97,7 +100,7 @@ fun TopAdBanner(
     }
 
     Box(modifier = modifier) {
-        if (!adsReady) {
+        if (!adsReady || !canRequestAds) {
             Spacer(modifier = Modifier.fillMaxSize())
             return@Box
         }

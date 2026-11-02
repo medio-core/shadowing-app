@@ -15,6 +15,7 @@ import com.shadowing.app.model.SubtitleCue
 import com.shadowing.app.model.SubtitleNavigator
 import com.shadowing.app.model.withOffset
 import com.shadowing.app.parser.InternalSubtitleExtractor
+import com.shadowing.app.parser.LimitedTextReader
 import com.shadowing.app.parser.SrtParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -46,6 +47,7 @@ class ShadowingViewModel(application: Application) : AndroidViewModel(applicatio
         private const val SESSION_SAVE_INTERVAL_MS = 2000L
         private const val RESTORE_SUBTITLE_RETRY_COUNT = 3
         private const val RESTORE_SUBTITLE_RETRY_DELAY_MS = 250L
+        private const val MAX_SRT_BYTES = 5 * 1024 * 1024
     }
 
     private val sessionStore = PlaybackSessionStore(application)
@@ -55,6 +57,7 @@ class ShadowingViewModel(application: Application) : AndroidViewModel(applicatio
     val appSettings: StateFlow<AppSettings> = _appSettings.asStateFlow()
     private val _uiState = MutableStateFlow(ShadowingUiState())
     val uiState: StateFlow<ShadowingUiState> = _uiState.asStateFlow()
+    private val loadRequestVersions = LoadRequestVersions()
     private var isRestoringSession = false
     private var lastSessionSaveAtMs = 0L
 
@@ -154,6 +157,8 @@ class ShadowingViewModel(application: Application) : AndroidViewModel(applicatio
      * 動画ファイルURIを設定する。
      */
     fun setVideoUri(uri: Uri) {
+        loadRequestVersions.markUserSelection()
+        val videoVersion = loadRequestVersions.startVideoSelection()
         val preset = workSettingsStore.loadForVideo(uri.toString())
         val defaults = _appSettings.value
         _uiState.update {
@@ -188,7 +193,11 @@ class ShadowingViewModel(application: Application) : AndroidViewModel(applicatio
         scanInternalSubtitles(uri, applyDetectedCues = true)
         if (preset != null) {
             viewModelScope.launch {
-                loadWorkSubtitleUris(preset)
+                loadWorkSubtitleUris(
+                    preset = preset,
+                    expectedVideoUri = uri,
+                    expectedVideoVersion = videoVersion,
+                )
             }
         }
         persistSessionNow()
@@ -198,6 +207,7 @@ class ShadowingViewModel(application: Application) : AndroidViewModel(applicatio
      * 日本語SRTファイルを読み込む。
      */
     fun loadJapaneseSrt(uri: Uri) {
+        loadRequestVersions.markUserSelection()
         loadSrt(uri, isJapanese = true)
     }
 
@@ -205,6 +215,7 @@ class ShadowingViewModel(application: Application) : AndroidViewModel(applicatio
      * 英語SRTファイルを読み込む。
      */
     fun loadEnglishSrt(uri: Uri) {
+        loadRequestVersions.markUserSelection()
         loadSrt(uri, isJapanese = false)
     }
 
@@ -212,6 +223,7 @@ class ShadowingViewModel(application: Application) : AndroidViewModel(applicatio
      * 内部日本語字幕を読み込む。
      */
     fun loadInternalJapaneseSubtitle(trackIndex: Int) {
+        loadRequestVersions.markUserSelection()
         loadInternalSubtitle(trackIndex = trackIndex, isJapanese = true)
     }
 
@@ -219,6 +231,7 @@ class ShadowingViewModel(application: Application) : AndroidViewModel(applicatio
      * 内部英語字幕を読み込む。
      */
     fun loadInternalEnglishSubtitle(trackIndex: Int) {
+        loadRequestVersions.markUserSelection()
         loadInternalSubtitle(trackIndex = trackIndex, isJapanese = false)
     }
 
@@ -521,6 +534,21 @@ class ShadowingViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     /**
+     * 動画プレイヤーのエラーを再生状態と画面へ反映する。
+     *
+     * @param message プレイヤーから受け取ったエラー内容
+     */
+    fun onPlaybackError(message: String) {
+        _uiState.update {
+            it.copy(
+                isPlayingSegment = false,
+                isPlayingVideo = false,
+                errorMessage = "動画の再生に失敗しました: $message",
+            )
+        }
+    }
+
+    /**
      * エラーメッセージをクリアする。
      */
     fun clearError() {
@@ -641,13 +669,17 @@ class ShadowingViewModel(application: Application) : AndroidViewModel(applicatio
         isJapanese: Boolean,
         resetIndex: Boolean = true,
     ) {
+        val loadVersion = loadRequestVersions.startSubtitleLoad(isJapanese)
         viewModelScope.launch {
-            loadSrtInternal(uri, isJapanese, resetIndex)
+            loadSrtInternal(uri, isJapanese, resetIndex, loadVersion)
                 .onFailure { error ->
-                    _uiState.update {
-                        it.copy(
-                            errorMessage = error.message ?: "字幕の読み込みに失敗しました",
-                        )
+                    if (loadRequestVersions.isCurrent(loadVersion)) {
+                        _uiState.update {
+                            it.copy(
+                                errorMessage =
+                                    error.message ?: "字幕の読み込みに失敗しました",
+                            )
+                        }
                     }
                 }
         }
@@ -660,14 +692,22 @@ class ShadowingViewModel(application: Application) : AndroidViewModel(applicatio
         uri: Uri,
         isJapanese: Boolean,
         resetIndex: Boolean,
-    ): Result<Unit> {
+        loadVersion: SubtitleLoadVersion,
+    ): Result<Boolean> {
         return runCatching {
-            val content = readText(uri)
-            val cues = SrtParser.parse(content)
+            val cues = readAndParseSrt(uri)
             if (cues.isEmpty()) {
                 error("字幕が1件も見つかりませんでした")
             }
+            if (!loadRequestVersions.isCurrent(loadVersion)) {
+                return@runCatching false
+            }
+            var applied = false
             _uiState.update { state ->
+                if (!loadRequestVersions.isCurrent(loadVersion)) {
+                    return@update state
+                }
+                applied = true
                 val updated = if (isJapanese) {
                     state.copy(
                         japaneseSrtUri = uri,
@@ -697,10 +737,16 @@ class ShadowingViewModel(application: Application) : AndroidViewModel(applicatio
                     updated
                 }
             }
-            if (!resetIndex) {
+            if (!applied) {
+                return@runCatching false
+            }
+            if (!resetIndex && loadRequestVersions.isCurrent(loadVersion)) {
                 syncCueIndexToPlaybackPosition()
             }
-            persistSessionNow()
+            if (loadRequestVersions.isCurrent(loadVersion)) {
+                persistSessionNow()
+            }
+            true
         }
     }
 
@@ -826,6 +872,8 @@ class ShadowingViewModel(application: Application) : AndroidViewModel(applicatio
      * 選択された内部字幕トラックを読み込む。
      */
     private fun loadInternalSubtitle(trackIndex: Int, isJapanese: Boolean) {
+        // 進行中の同一言語の外部字幕読み込みを無効化する。
+        loadRequestVersions.startSubtitleLoad(isJapanese)
         _uiState.update { state ->
             val track = state.internalSubtitleTracks
                 .firstOrNull { it.trackIndex == trackIndex }
@@ -946,15 +994,21 @@ class ShadowingViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     /**
-     * Content URIからテキストを読み込む。
+     * Content URIから上限付きでSRTを読み込み、バックグラウンドで解析する。
+     *
+     * @param uri 読み込む字幕ファイルURI
+     * @return 解析済み字幕一覧
      */
-    private suspend fun readText(uri: Uri): String = withContext(Dispatchers.IO) {
-        getApplication<Application>().contentResolver
-            .openInputStream(uri)
-            ?.bufferedReader(Charsets.UTF_8)
-            ?.use { it.readText() }
-            ?: error("ファイルを開けませんでした")
-    }
+    private suspend fun readAndParseSrt(uri: Uri): List<SubtitleCue> =
+        withContext(Dispatchers.IO) {
+            val content = getApplication<Application>().contentResolver
+                .openInputStream(uri)
+                ?.use { input ->
+                    LimitedTextReader.readUtf8(input, MAX_SRT_BYTES)
+                }
+                ?: error("ファイルを開けませんでした")
+            SrtParser.parse(content)
+        }
 
     /**
      * 前回の再生状態を復元する。
@@ -963,13 +1017,40 @@ class ShadowingViewModel(application: Application) : AndroidViewModel(applicatio
      */
     private suspend fun restoreLastSessionIfAvailable(): Boolean {
         val session = sessionStore.load() ?: return false
+        val restoreStartVersion = loadRequestVersions.currentVideoVersion()
+        val restoreStartUserSelection =
+            loadRequestVersions.currentUserSelectionVersion()
         val videoUri = Uri.parse(session.videoUri)
         if (!canReadUri(videoUri)) {
+            val userSelectionStillCurrent =
+                loadRequestVersions.isCurrentVideo(restoreStartVersion) &&
+                    loadRequestVersions.isCurrentUserSelection(
+                        restoreStartUserSelection,
+                    )
+            if (!userSelectionStillCurrent) {
+                // 読み取り確認中に選ばれた動画・字幕の設定を優先する。
+                return true
+            }
+            _uiState.update {
+                it.copy(
+                    errorMessage = "前回の動画を開けませんでした。" +
+                        "必要なら動画を再選択してください",
+                )
+            }
             return false
         }
 
-        isRestoringSession = true
         delay(300L)
+        // 待機中にユーザーが動画を選んだ場合は、その操作を優先する。
+        if (
+            !loadRequestVersions.isCurrentVideo(restoreStartVersion) ||
+            !loadRequestVersions.isCurrentUserSelection(restoreStartUserSelection)
+        ) {
+            return true
+        }
+
+        isRestoringSession = true
+        val restoreVideoVersion = loadRequestVersions.startVideoSelection()
         val restorePositionMs = session.playbackPositionMs.coerceAtLeast(0L)
         val hasExternalSubtitleUris = session.japaneseSrtUri != null ||
             session.englishSrtUri != null
@@ -1005,38 +1086,53 @@ class ShadowingViewModel(application: Application) : AndroidViewModel(applicatio
             )
         }
 
-        var loadedExternalSubtitle = false
+        val japaneseLoadVersion = session.japaneseSrtUri?.let {
+            loadRequestVersions.startSubtitleLoad(isJapanese = true)
+        }
+        val englishLoadVersion = session.englishSrtUri?.let {
+            loadRequestVersions.startSubtitleLoad(isJapanese = false)
+        }
+        var loadedExternalSubtitleCount = 0
+        val failedExternalSubtitleVersions = mutableListOf<SubtitleLoadVersion>()
         try {
-            var attemptedExternalSubtitle = false
             session.japaneseSrtUri?.let { uriString ->
-                attemptedExternalSubtitle = true
                 val uri = Uri.parse(uriString)
                 val result = loadSrtInternalWithRetry(
                     uri = uri,
                     isJapanese = true,
+                    loadVersion = requireNotNull(japaneseLoadVersion),
                 )
                 if (result) {
-                    loadedExternalSubtitle = true
+                    loadedExternalSubtitleCount += 1
+                } else {
+                    failedExternalSubtitleVersions += japaneseLoadVersion
                 }
             }
             session.englishSrtUri?.let { uriString ->
-                attemptedExternalSubtitle = true
                 val uri = Uri.parse(uriString)
                 val result = loadSrtInternalWithRetry(
                     uri = uri,
                     isJapanese = false,
+                    loadVersion = requireNotNull(englishLoadVersion),
                 )
                 if (result) {
-                    loadedExternalSubtitle = true
+                    loadedExternalSubtitleCount += 1
+                } else {
+                    failedExternalSubtitleVersions += englishLoadVersion
                 }
             }
 
-            scanInternalSubtitlesInternal(
-                uri = videoUri,
-                applyDetectedCues = true,
-            )
-            syncCueIndexToPlaybackPosition()
-            if (attemptedExternalSubtitle && !loadedExternalSubtitle) {
+            if (loadRequestVersions.isCurrentVideo(restoreVideoVersion)) {
+                scanInternalSubtitlesInternal(
+                    uri = videoUri,
+                    applyDetectedCues = true,
+                )
+                syncCueIndexToPlaybackPosition()
+            }
+            if (
+                loadRequestVersions.isCurrentVideo(restoreVideoVersion) &&
+                failedExternalSubtitleVersions.any(loadRequestVersions::isCurrent)
+            ) {
                 _uiState.update {
                     it.copy(
                         errorMessage = "前回の外部字幕を復元できませんでした。" +
@@ -1045,8 +1141,16 @@ class ShadowingViewModel(application: Application) : AndroidViewModel(applicatio
                 }
             }
         } finally {
+            val restoreStillCurrent =
+                loadRequestVersions.isCurrentVideo(restoreVideoVersion)
             isRestoringSession = false
-            if (!hasExternalSubtitleUris || loadedExternalSubtitle) {
+            if (
+                restoreStillCurrent &&
+                (!hasExternalSubtitleUris || loadedExternalSubtitleCount > 0)
+            ) {
+                persistSessionNow()
+            } else if (!restoreStillCurrent) {
+                // 復元中に選ばれた新しい動画を保存する。
                 persistSessionNow()
             }
         }
@@ -1056,17 +1160,61 @@ class ShadowingViewModel(application: Application) : AndroidViewModel(applicatio
     /**
      * 作品プリセットに保存された外部字幕 URI を読み込む。
      */
-    private suspend fun loadWorkSubtitleUris(preset: WorkSettings) {
+    private suspend fun loadWorkSubtitleUris(
+        preset: WorkSettings,
+        expectedVideoUri: Uri,
+        expectedVideoVersion: Long,
+    ) {
+        if (
+            !loadRequestVersions.isCurrentVideo(expectedVideoVersion) ||
+            _uiState.value.videoUri != expectedVideoUri
+        ) {
+            return
+        }
+        val japaneseLoadVersion = preset.japaneseSrtUri?.let {
+            loadRequestVersions.startSubtitleLoad(isJapanese = true)
+        }
+        val englishLoadVersion = preset.englishSrtUri?.let {
+            loadRequestVersions.startSubtitleLoad(isJapanese = false)
+        }
+        val unreadableSubtitleVersions = mutableListOf<SubtitleLoadVersion>()
         preset.japaneseSrtUri?.let { uriString ->
             val uri = Uri.parse(uriString)
             if (canReadUri(uri)) {
-                loadSrtInternalWithRetry(uri = uri, isJapanese = true)
+                loadSrtInternalWithRetry(
+                    uri = uri,
+                    isJapanese = true,
+                    loadVersion = requireNotNull(japaneseLoadVersion),
+                )
+            } else if (
+                japaneseLoadVersion?.let(loadRequestVersions::isCurrent) == true
+            ) {
+                unreadableSubtitleVersions += requireNotNull(japaneseLoadVersion)
             }
         }
         preset.englishSrtUri?.let { uriString ->
             val uri = Uri.parse(uriString)
             if (canReadUri(uri)) {
-                loadSrtInternalWithRetry(uri = uri, isJapanese = false)
+                loadSrtInternalWithRetry(
+                    uri = uri,
+                    isJapanese = false,
+                    loadVersion = requireNotNull(englishLoadVersion),
+                )
+            } else if (
+                englishLoadVersion?.let(loadRequestVersions::isCurrent) == true
+            ) {
+                unreadableSubtitleVersions += requireNotNull(englishLoadVersion)
+            }
+        }
+        if (
+            unreadableSubtitleVersions.any(loadRequestVersions::isCurrent) &&
+            loadRequestVersions.isCurrentVideo(expectedVideoVersion)
+        ) {
+            _uiState.update {
+                it.copy(
+                    errorMessage = "保存済みの字幕を開けませんでした。" +
+                        "必要なら字幕を再選択してください",
+                )
             }
         }
     }
@@ -1074,15 +1222,26 @@ class ShadowingViewModel(application: Application) : AndroidViewModel(applicatio
     /**
      * 復元用の字幕読み込みを短いリトライ付きで実行する。
      */
-    private suspend fun loadSrtInternalWithRetry(uri: Uri, isJapanese: Boolean): Boolean {
+    private suspend fun loadSrtInternalWithRetry(
+        uri: Uri,
+        isJapanese: Boolean,
+        loadVersion: SubtitleLoadVersion,
+    ): Boolean {
         repeat(RESTORE_SUBTITLE_RETRY_COUNT) { attempt ->
+            if (!loadRequestVersions.isCurrent(loadVersion)) {
+                return false
+            }
             val result = loadSrtInternal(
                 uri = uri,
                 isJapanese = isJapanese,
                 resetIndex = false,
+                loadVersion = loadVersion,
             )
-            if (result.isSuccess) {
+            if (result.getOrNull() == true) {
                 return true
+            }
+            if (result.getOrNull() == false) {
+                return false
             }
             if (attempt < RESTORE_SUBTITLE_RETRY_COUNT - 1) {
                 delay(RESTORE_SUBTITLE_RETRY_DELAY_MS)
@@ -1126,9 +1285,9 @@ class ShadowingViewModel(application: Application) : AndroidViewModel(applicatio
     /**
      * URI が読み取り可能か確認する。
      */
-    private fun canReadUri(uri: Uri): Boolean {
+    private suspend fun canReadUri(uri: Uri): Boolean = withContext(Dispatchers.IO) {
         val resolver = getApplication<Application>().contentResolver
-        return runCatching {
+        runCatching {
             resolver.openInputStream(uri)?.use { } ?: error("cannot open")
         }.isSuccess
     }
