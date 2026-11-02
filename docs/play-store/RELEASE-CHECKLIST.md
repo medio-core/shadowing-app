@@ -224,7 +224,7 @@ AdMob側では `com.shadowing.app` がGoogle Play検索に表示されなかっ�
 
 | 項目 | 値 |
 |------|-----|
-| プライバシーポリシー URL | https://medio-core.github.io/shadowing-app/privacy-policy.html |
+| プライバシーポリシー URL | https://skg-labs.com/ |
 | デベロッパーのウェブサイト | https://skg-labs.com |
 | お問い合わせメール | skgapplication@gmail.com |
 

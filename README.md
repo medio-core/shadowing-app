@@ -106,21 +106,23 @@ Hello
 ## プライバシーポリシー（Web 公開）
 
 Play Console には **HTTPS の公開 URL** が必須です（アプリ内表示だけでは不可）。
-`docs/` に静的 HTML を置いています（アプリ内文面と同一内容）。
+正式な公開先は SKG Labs 公式サイトです。`docs/` の静的 HTML は、
+アプリ固有の文面を管理・確認するためのリポジトリ内コピーです。
 
 | ファイル | 用途 |
 |----------|------|
-| `docs/privacy-policy.html` | **Play に登録する URL** |
+| `docs/privacy-policy.html` | アプリ固有ポリシーの管理・確認用コピー |
 | `docs/terms-of-service.html` | 利用規約（任意） |
-| `docs/README.md` | GitHub Pages の公開手順 |
+| `docs/README.md` | 法的文面の管理・公開確認手順 |
 
-**登録 URL**（[medio-core/shadowing-app](https://github.com/medio-core/shadowing-app)・GitHub Pages・`docs` 公開時）:
+**Play Console / AdMob の登録 URL**:
 
 ```
-https://medio-core.github.io/shadowing-app/privacy-policy.html
+https://skg-labs.com/
 ```
 
-手順: リポジトリを GitHub に push → Settings → Pages → Branch `main`、Folder **`/docs`** → 数分後に URL 確認 → Play Console の「プライバシーポリシー」欄に貼る。
+SKG Labs 公式サイト内の「プライバシーポリシー」節が公開されていることを確認してから、
+Play Console と AdMob に上記 URL を登録します。
 
 ## Play 本番公開（概要）
 

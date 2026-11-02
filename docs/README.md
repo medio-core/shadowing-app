@@ -1,31 +1,21 @@
-# 法的情報ページ（GitHub Pages 用）
+# 法的情報ページ
 
-Play Console の「プライバシーポリシー URL」に登録する静的 HTML です。
-アプリ内の文面（`LegalDocumentTexts.kt`）と内容を揃えています。
+アプリ固有の法的文面を管理・確認するための静的 HTML です。
+アプリ内の文面（`LegalDocumentTexts.kt`）と内容を揃えます。
 
-## Play Console に登録する URL
+## Play Console / AdMob に登録する URL
 
-GitHub Pages を有効にしたあと、次の URL を使います。
-
-```
-https://medio-core.github.io/shadowing-app/privacy-policy.html
-```
-
-例（別アカウントの場合）:
+SKG Labs 公式サイトの「プライバシーポリシー」節を公開し、次の URL を使います。
 
 ```
-https://<GitHubユーザー名>.github.io/<リポジトリ名>/privacy-policy.html
+https://skg-labs.com/
 ```
 
-## 公開手順（GitHub Pages）
+## 公開確認
 
-1. このプロジェクトを GitHub にプッシュ（`docs/` フォルダごと）
-2. GitHub のリポジトリ → **Settings** → **Pages**
-3. **Build and deployment** → Source: **Deploy from a branch**
-4. Branch: `main`（または `master`）、Folder: **`/docs`**
-5. **Save** → 数分待つと URL が表示される
-6. ブラウザで `privacy-policy.html` が開けることを確認
-7. Play Console → **ストアの掲載情報** → **プライバシーポリシー** に上記 URL を貼る
+1. `https://skg-labs.com/` をブラウザで開く
+2. 「プライバシーポリシー」節が表示されることを確認する
+3. Play Console と AdMob のプライバシーポリシー欄に上記 URL を登録する
 
 ## ファイル
 
@@ -38,5 +28,5 @@ https://<GitHubユーザー名>.github.io/<リポジトリ名>/privacy-policy.ht
 ## 更新するとき
 
 1. `docs/*.html` と `app/.../LegalDocumentTexts.kt` を同じ内容に揃える
-2. `app/src/main/res/values/strings.xml` の `legal_last_updated` を更新
-3. GitHub に push（Pages は自動で再デプロイ）
+2. `app/src/main/res/values/strings.xml` の `privacy_policy_last_updated` を更新
+3. SKG Labs 公式サイトの公開ポリシーも同じ変更内容へ更新する
